@@ -55,10 +55,7 @@ def normalize_features(features):
 
     for count, f in enumerate(features):
         if f.shape[0] > 0:
-            if count == 0:
-                temp_feats = f
-            else:
-                temp_feats = np.vstack((temp_feats, f))
+            temp_feats = f if count == 0 else np.vstack((temp_feats, f))
             count += 1
 
     mean = np.mean(temp_feats, axis=0) + 1e-14

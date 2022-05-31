@@ -33,9 +33,11 @@ def read_audio_file(input_file):
 
         if data.size > 0:
             sampling_rate = audiofile.frame_rate
-            temp_signal = []
-            for chn in list(range(audiofile.channels)):
-                temp_signal.append(data[chn::audiofile.channels])
+            temp_signal = [
+                data[chn :: audiofile.channels]
+                for chn in list(range(audiofile.channels))
+            ]
+
             signal = np.array(temp_signal).T
     except:
         _logger.error("File not found or other I/O error. (DECODING FAILED)")
@@ -70,9 +72,8 @@ def stereo_to_mono(signal):
     if signal.ndim == 2:
         if signal.shape[1] == 1:
             signal = signal.flatten()
-        else:
-            if signal.shape[1] == 2:
-                signal = (signal[:, 1] / 2) + (signal[:, 0] / 2)
+        elif signal.shape[1] == 2:
+            signal = (signal[:, 1] / 2) + (signal[:, 0] / 2)
     return signal
 
 
@@ -110,10 +111,10 @@ def silence_removal(signal, sampling_rate, st_win, st_step, smooth_window=0.5,
     st_energy = st_feats[1, :]
     en = np.sort(st_energy)
     # number of 10% of the total short-term windows
-    st_windows_fraction = int(len(en) / 10)
+    st_windows_fraction = len(en) // 10
 
     # compute "lower" 10% energy threshold
-    low_threshold = np.mean(en[0:st_windows_fraction]) + 1e-15
+    low_threshold = np.mean(en[:st_windows_fraction]) + 1e-15
 
     # compute "higher" 10% energy threshold
     high_threshold = np.mean(en[-st_windows_fraction:-1]) + 1e-15
@@ -150,8 +151,10 @@ def silence_removal(signal, sampling_rate, st_win, st_step, smooth_window=0.5,
     # find probability Threshold as a weighted average
     # of top 10% and lower 10% of the values
     nt = int(prog_on_set_sort.shape[0] / 10)
-    threshold = (np.mean((1 - weight) * prog_on_set_sort[0:nt]) +
-                 weight * np.mean(prog_on_set_sort[-nt::]))
+    threshold = np.mean(
+        (1 - weight) * prog_on_set_sort[:nt]
+    ) + weight * np.mean(prog_on_set_sort[-nt::])
+
 
     max_indices = np.where(prob_on_set > threshold)[0]
     # get the indices of the frames that satisfy the thresholding
@@ -177,12 +180,7 @@ def silence_removal(signal, sampling_rate, st_win, st_step, smooth_window=0.5,
 
     # Step 5: Post process: remove very small segments:
     min_duration = 0.2
-    seg_limits_2 = []
-    for s_lim in seg_limits:
-        if s_lim[1] - s_lim[0] > min_duration:
-            seg_limits_2.append(s_lim)
-    seg_limits = seg_limits_2
-    return seg_limits
+    return [s_lim for s_lim in seg_limits if s_lim[1] - s_lim[0] > min_duration]
 
 
 def remove_silent_segments(input_file, smoothing_window=1.0, weight=0.2):
@@ -200,7 +198,7 @@ def remove_silent_segments(input_file, smoothing_window=1.0, weight=0.2):
     [fs, x] = read_audio_file(input_file)
     segmentLimits = silence_removal(x, fs, 0.05, 0.05, smoothing_window, weight)
 
-    for i, s in enumerate(segmentLimits):
-        strOut = "{0:s}_{1:.3f}-{2:.3f}.wav".format(input_file[0:-4], s[0], s[1])
+    for s in segmentLimits:
+        strOut = "{0:s}_{1:.3f}-{2:.3f}.wav".format(input_file[:-4], s[0], s[1])
         wavfile.write(strOut, fs, x[int(fs * s[0]):int(fs * s[1])])
 

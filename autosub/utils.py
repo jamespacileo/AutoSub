@@ -82,15 +82,12 @@ def get_model(args, arg_name):
     """
     
     if arg_name == "model":
-        if args.engine == "ds":
-            arg_extension = ".pbmm"
-        else:
-            arg_extension = ".tflite"
+        arg_extension = ".pbmm" if args.engine == "ds" else ".tflite"
     elif arg_name == "scorer":
         arg_extension = ".scorer"
 
     arg = args.__getattribute__(arg_name)
-    
+
     if arg is not None:
         model = os.path.abspath(arg)
         if not os.path.isfile(model):
@@ -99,11 +96,14 @@ def get_model(args, arg_name):
     else:
         models = [file for file in os.listdir() if file.endswith(arg_extension)]
         num_models = len(models)
-    
+
         if num_models == 0:
             model = download_model(args.engine, arg_name)
 
-        elif num_models != 1: 
+        elif num_models == 1:
+            model = os.path.abspath(models[0])                    
+
+        else:
             _logger.warn(f"Detected {num_models} {arg_name} files in local dir")
             if arg_name == 'model':
                 _logger.error("Must specify pbmm model")
@@ -111,9 +111,6 @@ def get_model(args, arg_name):
             else:
                 _logger.warn("Please specify scorer using --scorer")
                 model = ''
-        else:
-            model = os.path.abspath(models[0])                    
-    
     _logger.info(f"{arg_name.capitalize()}: {model}")
     return(model)
 
@@ -128,10 +125,7 @@ def create_model(engine, model, scorer):
     """
 
     try:
-        if engine == "ds":
-            ds = DModel(model)
-        else:
-            ds = SModel(model)
+        ds = DModel(model) if engine == "ds" else SModel(model)
     except:
         _logger.error("Invalid model file")
         sys.exit(1)

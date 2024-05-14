@@ -33,7 +33,7 @@ def energy_entropy(frame, n_short_blocks=10):
     frame_length = len(frame)
     sub_win_len = int(np.floor(frame_length / n_short_blocks))
     if frame_length != sub_win_len * n_short_blocks:
-        frame = frame[0:sub_win_len * n_short_blocks]
+        frame = frame[:sub_win_len * n_short_blocks]
 
     # sub_wins is of size [n_short_blocks x L]
     sub_wins = frame.reshape(sub_win_len, n_short_blocks, order='F').copy()
@@ -41,9 +41,7 @@ def energy_entropy(frame, n_short_blocks=10):
     # Compute normalized sub-frame energies:
     s = np.sum(sub_wins ** 2, axis=0) / (frame_energy + eps)
 
-    # Compute entropy of the normalized sub-frame energies:
-    entropy = -np.sum(s * np.log2(s + eps))
-    return entropy
+    return -np.sum(s * np.log2(s + eps))
 
 
 """ Frequency-domain audio features """
@@ -86,7 +84,7 @@ def spectral_entropy(signal, n_short_blocks=10):
     # length of sub-frame
     sub_win_len = int(np.floor(num_frames / n_short_blocks))
     if num_frames != sub_win_len * n_short_blocks:
-        signal = signal[0:sub_win_len * n_short_blocks]
+        signal = signal[:sub_win_len * n_short_blocks]
 
     # define sub-frames (using matrix reshape)
     sub_wins = signal.reshape(sub_win_len, n_short_blocks, order='F').copy()
@@ -94,9 +92,7 @@ def spectral_entropy(signal, n_short_blocks=10):
     # compute spectral sub-energies
     s = np.sum(sub_wins ** 2, axis=0) / (total_energy + eps)
 
-    # compute spectral entropy
-    entropy = -np.sum(s * np.log2(s + eps))
-    return entropy
+    return -np.sum(s * np.log2(s + eps))
 
 
 def spectral_flux(fft_magnitude, previous_fft_magnitude):
@@ -110,10 +106,10 @@ def spectral_flux(fft_magnitude, previous_fft_magnitude):
     # compute the spectral flux as the sum of square distances:
     fft_sum = np.sum(fft_magnitude + eps)
     previous_fft_sum = np.sum(previous_fft_magnitude + eps)
-    sp_flux = np.sum(
-        (fft_magnitude / fft_sum - previous_fft_magnitude /
-         previous_fft_sum) ** 2)
-    return sp_flux
+    return np.sum(
+        (fft_magnitude / fft_sum - previous_fft_magnitude / previous_fft_sum)
+        ** 2
+    )
 
 
 def spectral_rolloff(signal, c):
@@ -127,11 +123,7 @@ def spectral_rolloff(signal, c):
     # where the respective spectral energy is equal to c*totalEnergy
     cumulative_sum = np.cumsum(signal ** 2) + eps
     a = np.nonzero(cumulative_sum > threshold)[0]
-    if len(a) > 0:
-        sp_rolloff = np.float64(a[0]) / (float(fft_length))
-    else:
-        sp_rolloff = 0.0
-    return sp_rolloff
+    return np.float64(a[0]) / (float(fft_length)) if len(a) > 0 else 0.0
 
 
 def mfcc_filter_banks(sampling_rate, num_fft, lowfreq=133.33, linc=200 / 3,
@@ -153,7 +145,7 @@ def mfcc_filter_banks(sampling_rate, num_fft, lowfreq=133.33, linc=200 / 3,
     frequencies[:num_lin_filt] = lowfreq + np.arange(num_lin_filt) * linc
     frequencies[num_lin_filt:] = frequencies[num_lin_filt - 1] * logsc ** \
                                  np.arange(1, num_log_filt + 3)
-    heights = 2. / (frequencies[2:] - frequencies[0:-2])
+    heights = 2. / (frequencies[2:] - frequencies[:-2])
 
     # Compute filterbank coeff (in fft domain, in bins)
     fbank = np.zeros((num_filt_total, num_fft))
@@ -195,8 +187,7 @@ def mfcc(fft_magnitude, fbank, num_mfcc_feats):
     """
 
     mspec = np.log10(np.dot(fft_magnitude, fbank.T) + eps)
-    ceps = dct(mspec, type=2, norm='ortho', axis=-1)[:num_mfcc_feats]
-    return ceps
+    return dct(mspec, type=2, norm='ortho', axis=-1)[:num_mfcc_feats]
 
 
 def chroma_features_init(num_fft, sampling_rate):
@@ -234,7 +225,7 @@ def chroma_features(signal, sampling_rate, num_fft):
     else:
         I = np.nonzero(num_chroma > num_chroma.shape[0])[0][0]
         C = np.zeros((num_chroma.shape[0],))
-        C[num_chroma[0:I - 1]] = spec
+        C[num_chroma[:I - 1]] = spec
         C /= num_freqs_per_chroma
     final_matrix = np.zeros((12, 1))
     newD = int(np.ceil(C.shape[0] / 12.0) * 12)
@@ -294,7 +285,7 @@ def feature_extraction(signal, sampling_rate, window, step, deltas=True):
     number_of_samples = len(signal)  # total number of samples
     current_position = 0
     count_fr = 0
-    num_fft = int(window / 2)
+    num_fft = window // 2
 
     # compute the triangular filter banks used in the mfcc calculation
     fbank, freqs = mfcc_filter_banks(sampling_rate, num_fft)
@@ -311,9 +302,7 @@ def feature_extraction(signal, sampling_rate, window, step, deltas=True):
     # define list of feature names
     feature_names = ["zcr", "energy", "energy_entropy"]
     feature_names += ["spectral_centroid", "spectral_spread"]
-    feature_names.append("spectral_entropy")
-    feature_names.append("spectral_flux")
-    feature_names.append("spectral_rolloff")
+    feature_names.extend(("spectral_entropy", "spectral_flux", "spectral_rolloff"))
     feature_names += ["mfcc_{0:d}".format(mfcc_i)
                       for mfcc_i in range(1, n_mfcc_feats + 1)]
     feature_names += ["chroma_{0:d}".format(chroma_i)
@@ -322,10 +311,14 @@ def feature_extraction(signal, sampling_rate, window, step, deltas=True):
 
     # add names for delta features:
     if deltas:
-        feature_names_2 = feature_names + ["delta " + f for f in feature_names]
+        feature_names_2 = feature_names + [f"delta {f}" for f in feature_names]
         feature_names = feature_names_2
 
     features = []
+    # MFCCs
+    mffc_feats_end = n_time_spectral_feats + n_mfcc_feats
+    chroma_features_end = n_time_spectral_feats + n_mfcc_feats + \
+                          n_chroma_feats - 1
     # for each short-term window to end of signal
     while current_position + window - 1 < number_of_samples:
         count_fr += 1
@@ -333,13 +326,13 @@ def feature_extraction(signal, sampling_rate, window, step, deltas=True):
         x = signal[current_position:current_position + window]
 
         # update window position
-        current_position = current_position + step
+        current_position += step
 
         # get fft magnitude
         fft_magnitude = abs(fft(x))
 
         # normalize fft
-        fft_magnitude = fft_magnitude[0:num_fft]
+        fft_magnitude = fft_magnitude[:num_fft]
         fft_magnitude = fft_magnitude / len(fft_magnitude)
 
         # keep previous fft mag (used in spectral flux)
@@ -374,16 +367,12 @@ def feature_extraction(signal, sampling_rate, window, step, deltas=True):
         feature_vector[7] = \
             spectral_rolloff(fft_magnitude, 0.90)
 
-        # MFCCs
-        mffc_feats_end = n_time_spectral_feats + n_mfcc_feats
         feature_vector[n_time_spectral_feats:mffc_feats_end, 0] = \
             mfcc(fft_magnitude, fbank, n_mfcc_feats).copy()
 
         # chroma features
         chroma_names, chroma_feature_matrix = \
             chroma_features(fft_magnitude, sampling_rate, num_fft)
-        chroma_features_end = n_time_spectral_feats + n_mfcc_feats + \
-                              n_chroma_feats - 1
         feature_vector[mffc_feats_end:chroma_features_end] = \
             chroma_feature_matrix
         feature_vector[chroma_features_end] = chroma_feature_matrix.std()
